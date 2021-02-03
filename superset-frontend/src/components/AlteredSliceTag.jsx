@@ -18,14 +18,13 @@
  */
 import React from 'react';
 import PropTypes from 'prop-types';
-import { Table, Tr, Td, Thead, Th } from 'reactable-arc';
 import { isEqual, isEmpty } from 'lodash';
-import { getChartControlPanelRegistry } from '@superset-ui/chart';
+import { t } from '@superset-ui/core';
 import getControlsForVizType from 'src/utils/getControlsForVizType';
-import { t } from '@superset-ui/translation';
+import { safeStringify } from 'src/utils/safeStringify';
 import TooltipWrapper from './TooltipWrapper';
 import ModalTrigger from './ModalTrigger';
-import { safeStringify } from '../utils/safeStringify';
+import TableView from './TableView';
 
 const propTypes = {
   origFormData: PropTypes.object.isRequired,
@@ -37,7 +36,8 @@ function alterForComparison(value) {
   // for this purpose
   if (value === undefined || value === null || value === '') {
     return null;
-  } else if (typeof value === 'object') {
+  }
+  if (typeof value === 'object') {
     if (Array.isArray(value) && value.length === 0) {
       return null;
     }
@@ -53,10 +53,10 @@ export default class AlteredSliceTag extends React.Component {
   constructor(props) {
     super(props);
     const diffs = this.getDiffs(props);
-
     const controlsMap = getControlsForVizType(this.props.origFormData.viz_type);
+    const rows = this.getRowsFromDiffs(diffs, controlsMap);
 
-    this.state = { diffs, hasDiffs: !isEmpty(diffs), controlsMap };
+    this.state = { rows, hasDiffs: !isEmpty(diffs), controlsMap };
   }
 
   UNSAFE_componentWillReceiveProps(newProps) {
@@ -65,7 +65,18 @@ export default class AlteredSliceTag extends React.Component {
       return;
     }
     const diffs = this.getDiffs(newProps);
-    this.setState({ diffs, hasDiffs: !isEmpty(diffs) });
+    this.setState(prevState => ({
+      rows: this.getRowsFromDiffs(diffs, prevState.controlsMap),
+      hasDiffs: !isEmpty(diffs),
+    }));
+  }
+
+  getRowsFromDiffs(diffs, controlsMap) {
+    return Object.entries(diffs).map(([key, diff]) => ({
+      control: (controlsMap[key] && controlsMap[key].label) || key,
+      before: this.formatValue(diff.before, key, controlsMap),
+      after: this.formatValue(diff.after, key, controlsMap),
+    }));
   }
 
   getDiffs(props) {
@@ -76,19 +87,17 @@ export default class AlteredSliceTag extends React.Component {
 
     const fdKeys = Object.keys(cfd);
     const diffs = {};
-    for (const fdKey of fdKeys) {
-      // Ignore values that are undefined/nonexisting in either
+    fdKeys.forEach(fdKey => {
       if (!ofd[fdKey] && !cfd[fdKey]) {
-        continue;
+        return;
       }
-      // Ignore obsolete legacy filters
       if (['filters', 'having', 'having_filters', 'where'].includes(fdKey)) {
-        continue;
+        return;
       }
       if (!this.isEqualish(ofd[fdKey], cfd[fdKey])) {
         diffs[fdKey] = { before: ofd[fdKey], after: cfd[fdKey] };
       }
-    }
+    });
     return diffs;
   }
 
@@ -96,17 +105,16 @@ export default class AlteredSliceTag extends React.Component {
     return isEqual(alterForComparison(val1), alterForComparison(val2));
   }
 
-  formatValue(value, key) {
+  formatValue(value, key, controlsMap) {
     // Format display value based on the control type
     // or the value type
     if (value === undefined) {
       return 'N/A';
-    } else if (value === null) {
+    }
+    if (value === null) {
       return 'null';
-    } else if (
-      this.state.controlsMap[key] &&
-      this.state.controlsMap[key].type === 'AdhocFilterControl'
-    ) {
+    }
+    if (controlsMap[key]?.type === 'AdhocFilterControl') {
       if (!value.length) {
         return '[]';
       }
@@ -119,58 +127,48 @@ export default class AlteredSliceTag extends React.Component {
           return `${v.subject} ${v.operator} ${filterVal}`;
         })
         .join(', ');
-    } else if (
-      this.state.controlsMap[key] &&
-      this.state.controlsMap[key].type === 'BoundsControl'
-    ) {
+    }
+    if (controlsMap[key]?.type === 'BoundsControl') {
       return `Min: ${value[0]}, Max: ${value[1]}`;
-    } else if (
-      this.state.controlsMap[key] &&
-      this.state.controlsMap[key].type === 'CollectionControl'
-    ) {
+    }
+    if (controlsMap[key]?.type === 'CollectionControl') {
       return value.map(v => safeStringify(v)).join(', ');
-    } else if (typeof value === 'boolean') {
+    }
+    if (typeof value === 'boolean') {
       return value ? 'true' : 'false';
-    } else if (value.constructor === Array) {
+    }
+    if (value.constructor === Array) {
       return value.length ? value.join(', ') : '[]';
-    } else if (typeof value === 'string' || typeof value === 'number') {
+    }
+    if (typeof value === 'string' || typeof value === 'number') {
       return value;
     }
     return safeStringify(value);
   }
 
-  renderRows() {
-    const diffs = this.state.diffs;
-    const rows = [];
-    for (const key in diffs) {
-      rows.push(
-        <Tr key={key}>
-          <Td
-            column="control"
-            data={
-              (this.state.controlsMap[key] &&
-                this.state.controlsMap[key].label) ||
-              key
-            }
-          />
-          <Td column="before">{this.formatValue(diffs[key].before, key)}</Td>
-          <Td column="after">{this.formatValue(diffs[key].after, key)}</Td>
-        </Tr>,
-      );
-    }
-    return rows;
-  }
-
   renderModalBody() {
+    const columns = [
+      {
+        accessor: 'control',
+        Header: 'Control',
+      },
+      {
+        accessor: 'before',
+        Header: 'Before',
+      },
+      {
+        accessor: 'after',
+        Header: 'After',
+      },
+    ];
+
     return (
-      <Table className="table" sortable>
-        <Thead>
-          <Th column="control">Control</Th>
-          <Th column="before">Before</Th>
-          <Th column="after">After</Th>
-        </Thead>
-        {this.renderRows()}
-      </Table>
+      <TableView
+        columns={columns}
+        data={this.state.rows}
+        pageSize={50}
+        className="table-condensed"
+      />
     );
   }
 
@@ -197,11 +195,10 @@ export default class AlteredSliceTag extends React.Component {
     // differences in the slice
     return (
       <ModalTrigger
-        animation
         triggerNode={this.renderTriggerNode()}
         modalTitle={t('Chart changes')}
-        bsSize="large"
         modalBody={this.renderModalBody()}
+        responsive
       />
     );
   }

@@ -16,7 +16,7 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-import { t } from '@superset-ui/translation';
+import { t } from '@superset-ui/core';
 import getToastsFromPyFlashMessages from '../../messageToasts/utils/getToastsFromPyFlashMessages';
 
 export default function getInitialState({
@@ -27,6 +27,7 @@ export default function getInitialState({
   databases,
   queries: queries_,
   requested_query: requestedQuery,
+  user,
 }) {
   /**
    * Before YYYY-MM-DD, the state for SQL Lab was stored exclusively in the
@@ -40,13 +41,14 @@ export default function getInitialState({
   const defaultQueryEditor = {
     id: null,
     loaded: true,
-    title: t('Untitled Query'),
+    title: t('Untitled query'),
     sql: 'SELECT *\nFROM\nWHERE',
     selectedText: null,
     latestQueryId: null,
     autorun: false,
     templateParams: null,
     dbId: defaultDbId,
+    functionNames: [],
     queryLimit: common.conf.DEFAULT_SQLLAB_LIMIT,
     validationResult: {
       id: null,
@@ -79,6 +81,7 @@ export default function getInitialState({
         autorun: activeTab.autorun,
         templateParams: activeTab.template_params,
         dbId: activeTab.database_id,
+        functionNames: [],
         schema: activeTab.schema,
         queryLimit: activeTab.query_limit,
         validationResult: {
@@ -144,7 +147,7 @@ export default function getInitialState({
     localStorage.getItem('redux') &&
     JSON.parse(localStorage.getItem('redux')).sqlLab
   ) {
-    const sqlLab = JSON.parse(localStorage.getItem('redux')).sqlLab;
+    const { sqlLab } = JSON.parse(localStorage.getItem('redux'));
 
     if (sqlLab.queryEditors.length === 0) {
       // migration was successful
@@ -180,6 +183,7 @@ export default function getInitialState({
       tabHistory,
       tables,
       queriesLastUpdate: Date.now(),
+      user,
     },
     requestedQuery,
     messageToasts: getToastsFromPyFlashMessages(
